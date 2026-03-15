@@ -12,3 +12,6 @@ export interface CreateBrand {
     brand_id?: number
     brand_name: string
 }
+
+
+

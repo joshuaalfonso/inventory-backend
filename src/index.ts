@@ -4,6 +4,7 @@ import { brandRoute } from './module/brand/brand.route.js'
 import { testConnection } from './config/connection.js';
 import { prettyJSON } from 'hono/pretty-json';
 import { cors } from 'hono/cors';
+import { ZodError } from 'zod/v3';
 
 const app = new Hono();
 
@@ -14,7 +15,7 @@ app.use("*", prettyJSON());
 app.use(
   "*",
   cors({
-    origin: "http://localhost:5173",
+    origin: "*",
     allowMethods: ["GET", "POST", "PUT", "DELETE"],
     allowHeaders: ["Content-Type", "Authorization"],
   })
@@ -25,7 +26,7 @@ app.get('/', (c) => {
 });
 
 
-app.route('/brand', brandRoute)
+app.route('/brand', brandRoute);
 
 serve({
   fetch: app.fetch,
