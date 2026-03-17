@@ -50,9 +50,9 @@ export const createBrandController = async (c: any) => {
                 FROM 
                     brand 
                 WHERE 
-                    brand_name = ? LIMIT 1
+                    brand_name = ? AND is_del = ? LIMIT 1
             `,
-            [brand_name]
+            [brand_name, 0]
         );
 
         if (rows.length > 0) {
@@ -103,9 +103,9 @@ export const updateBrandController = async (c: any) => {
                 FROM 
                     brand 
                 WHERE 
-                    brand_name = ? LIMIT 1
+                    brand_name = ? AND is_del = ? LIMIT 1
             `,
-            [brand_name]
+            [brand_name, 0]
         );
 
         if (rows.length > 0) {
