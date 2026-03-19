@@ -16,6 +16,8 @@ export const getBrandController = async (c: Context) => {
                     brand
                 WHERE
                     is_del = ?
+                ORDER BY
+                    created_at DESC
             `,
             [0]
         );
@@ -81,7 +83,7 @@ export const createBrandController = async (c: any) => {
 
     catch (err) {
         console.error(err)
-        c.json({
+        return c.json({
             success: false,
             message: "Failed to create brand."
         }, 500)
@@ -92,9 +94,10 @@ export const createBrandController = async (c: any) => {
 
 export const updateBrandController = async (c: any) => {
 
-    const { brand_id, brand_name } = c.req.valid('json');
 
     try {
+
+        const { brand_id, brand_name } = c.req.valid('json');
 
         const [rows]: any = await pool.query(
             `
@@ -136,7 +139,7 @@ export const updateBrandController = async (c: any) => {
 
     catch (err) {
         console.error(err)
-        c.json({
+        return c.json({
             success: false,
             message: "Failed to update brand."
         }, 500)
@@ -178,12 +181,12 @@ export const softDeleteBrandController = async (c: any) => {
             success: true,
             message: "Brand deleted successfully."
         })
-
+ 
     }
 
     catch (err) {
         console.error(err)
-        c.json({
+        return c.json({
             success: false,
             message: "Failed to delete brand."
         }, 500)
