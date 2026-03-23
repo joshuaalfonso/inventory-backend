@@ -5,6 +5,9 @@ import { testConnection } from './config/connection.js';
 import { prettyJSON } from 'hono/pretty-json';
 import { cors } from 'hono/cors';
 import { ZodError } from 'zod/v3';
+import { categoryRoute } from './module/category/category.route.js';
+import { itemTypeRoute } from './module/item-type/item-type.route.js';
+import { unitOfMeasureRoute } from './module/unit-of-measure/unit-of-measure.route.js';
 
 const app = new Hono();
 
@@ -26,7 +29,10 @@ app.get('/', (c) => {
 });
 
 
-app.route('/brand', brandRoute);
+app.route('brand', brandRoute);
+app.route('category', categoryRoute);
+app.route('item-type', itemTypeRoute);
+app.route('unit-of-measure', unitOfMeasureRoute);
 
 serve({
   fetch: app.fetch,
@@ -34,3 +40,5 @@ serve({
 }, (info) => {
   console.log(`Server is running on http://localhost:${info.port}`)
 })
+
+
