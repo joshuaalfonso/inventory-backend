@@ -74,8 +74,8 @@ export const createUnitOfMeasureController = async (c: any) => {
                     unit_of_measure (unit_of_measure_name)
                 VALUES
                     (?) 
-            `,
-            [unit_of_measure_name]
+            `, 
+            [unit_of_measure_name] 
         );
 
         return c.json({

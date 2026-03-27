@@ -8,6 +8,7 @@ import { ZodError } from 'zod/v3';
 import { categoryRoute } from './module/category/category.route.js';
 import { itemTypeRoute } from './module/item-type/item-type.route.js';
 import { unitOfMeasureRoute } from './module/unit-of-measure/unit-of-measure.route.js';
+import { itemRoute } from './module/item/item.route.js';
 
 const app = new Hono();
 
@@ -29,6 +30,7 @@ app.get('/', (c) => {
 });
 
 
+app.route('item', itemRoute);
 app.route('brand', brandRoute);
 app.route('category', categoryRoute);
 app.route('item-type', itemTypeRoute);
