@@ -1,12 +1,11 @@
 import type { Context } from "hono";
 import { pool } from "../../config/connection.js";
+import type { SupplierList } from "./supplier.model.js";
 import { idSchema } from "../../shared/schema/id.schema.js";
-import type { ItemTypeList } from "./item-type.model.js";
 
 
 
-
-export const getItemTypeController = async (c: Context) => {
+export const getSupplierController = async (c: Context) => {
 
     try {
 
@@ -15,7 +14,7 @@ export const getItemTypeController = async (c: Context) => {
                 SELECT 
                     * 
                 FROM 
-                    item_type
+                    supplier
                 WHERE
                     is_del = ?
                 ORDER BY
@@ -24,9 +23,9 @@ export const getItemTypeController = async (c: Context) => {
             [0]
         );
 
-        const itemTypes = rows as ItemTypeList[];
+        const suppliers = rows as SupplierList[];
 
-        return c.json(itemTypes);
+        return c.json(suppliers);
 
     }
 
@@ -34,7 +33,7 @@ export const getItemTypeController = async (c: Context) => {
         console.log(err);
         return c.json({
             success: false,
-            message: "Failed to fetch item type"
+            message: "Failed to fetch supplier"
         }, 500);
     }
 
@@ -42,45 +41,44 @@ export const getItemTypeController = async (c: Context) => {
 }
 
 
-
-export const createItemTypeController = async (c: any) => {
-
-    const { item_type_name, description } = c.req.valid('json');
+export const createSupplierController = async (c: any) => {
 
     try {
+
+        const { supplier_name, supplier_address, contact_person, contact_number } = c.req.valid('json');
 
         const [rows]: any = await pool.query(
             `
                 SELECT 
-                    item_type_id
+                    supplier_id
                 FROM 
-                    item_type 
+                    supplier
                 WHERE 
-                    item_type_name = ? AND is_del = ? LIMIT 1
+                    supplier_name = ? AND is_del = ? LIMIT 1
             `,
-            [item_type_name, 0]
+            [supplier_name, 0]
         );
 
         if (rows.length > 0) {
             return c.json({
                 success: false,
-                message: "Item Type already exists."
+                message: `'${supplier_name}' already exists.`
             }, 409);
         }
 
         await pool.query(
             `
                 INSERT INTO
-                    item_type (item_type_name, description)
+                    supplier (supplier_name, supplier_address, contact_person, contact_number)
                 VALUES
-                    (?, ?)
+                    (?, ?, ?, ?)
             `,
-            [item_type_name, description]
+            [supplier_name, supplier_address, contact_person, contact_number]
         );
 
         return c.json({
             success: true,
-            message: "Item type created successfully."
+            message: `'${supplier_name}' created successfully.`
         })
 
     }
@@ -89,7 +87,7 @@ export const createItemTypeController = async (c: any) => {
         console.error(err)
         return c.json({
             success: false,
-            message: "Failed to create item type."
+            message: "Failed to create supplier."
         }, 500)
     }
 
@@ -97,47 +95,47 @@ export const createItemTypeController = async (c: any) => {
 }
 
 
-export const updateItemTypeController = async (c: any) => {
+export const updateSupplierController = async (c: any) => {
 
 
     try {
 
-        const { item_type_id, item_type_name, description } = c.req.valid('json');
+        const { supplier_id, supplier_name, supplier_address, contact_person, contact_number } = c.req.valid('json');
 
         const [rows]: any = await pool.query(
             `
                 SELECT 
-                    item_type_id
+                    supplier_id
                 FROM 
-                    item_type 
+                    supplier
                 WHERE 
-                    item_type_name = ? AND is_del = ? LIMIT 1
+                    supplier_name = ? AND is_del = ? LIMIT 1
             `,
-            [item_type_name, 0]
+            [supplier_name, 0]
         );
 
         if (rows.length > 0) {
             return c.json({
                 success: false,
-                message: "Item type already exists."
+                message: `'${supplier_name}' already exists.`
             }, 409);
         }
 
         await pool.query(
             `
                 Update 
-                    item_type 
+                    supplier 
                 SET
-                    item_type_name = ?, description = ?
+                    supplier_name = ?, supplier_address = ?, contact_person = ?, contact_number = ?
                 WHERE 
-                    item_type_id = ?
+                    supplier_id = ?
             `,
-            [item_type_name, description, item_type_id]
+            [supplier_name, supplier_address, contact_person, contact_number, supplier_id]
         );
 
         return c.json({
             success: true,
-            message: "Item type updated successfully."
+            message: `'${supplier_name}' updated successfully.`
         })
 
     }
@@ -146,20 +144,20 @@ export const updateItemTypeController = async (c: any) => {
         console.error(err)
         return c.json({
             success: false,
-            message: "Failed to update item type."
+            message: `Failed to update supplier.`
         }, 500)
     }
 
 }
 
 
-export const softDeleteItemTypeController = async (c: any) => {
+export const softDeleteSupplierController = async (c: any) => {
 
     try {
 
-        const { item_type_id } = c.req.param();
+        const { supplier_id } = c.req.param();
     
-        const result = idSchema.safeParse(item_type_id);
+        const result = idSchema.safeParse(supplier_id);
 
         if (!result.success) {
             return c.json({ 
@@ -172,19 +170,19 @@ export const softDeleteItemTypeController = async (c: any) => {
 
         await pool.query(
             `
-                Update 
-                    item_type 
+                UPDATE 
+                    supplier 
                 SET
                     is_del = ? 
                 WHERE 
-                    item_type_id = ?
+                    supplier_id = ?
             `,
             [1, result.data]
         );
 
         return c.json({
             success: true,
-            message: "Item type deleted successfully."
+            message: "Supplier deleted successfully."
         })
  
     }
@@ -193,7 +191,7 @@ export const softDeleteItemTypeController = async (c: any) => {
         console.error(err)
         return c.json({
             success: false,
-            message: "Failed to delete item type."
+            message: "Failed to delete supplier."
         }, 500)
     }
 

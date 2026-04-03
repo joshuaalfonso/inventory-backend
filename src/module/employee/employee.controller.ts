@@ -144,7 +144,7 @@ export const updateEmployeeController = async (c: any) => {
 
     }
 
-    catch (err) {
+    catch (err) { 
         console.error(err)
         return c.json({
             success: false,

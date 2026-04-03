@@ -14,6 +14,7 @@ export interface ItemTypeList {
 export interface CreateBrand {
     item_type_id?: number
     item_type_name: string
+    description: string
 }
 
 

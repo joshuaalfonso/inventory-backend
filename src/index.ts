@@ -11,6 +11,7 @@ import { unitOfMeasureRoute } from './module/unit-of-measure/unit-of-measure.rou
 import { itemRoute } from './module/item/item.route.js';
 import { departmentRoute } from './module/department/department.route.js';
 import { employeeRoute } from './module/employee/employee.route.js';
+import { supplierRoute } from './module/supplier/supplier.route.js';
 
 const app = new Hono();
 
@@ -39,6 +40,7 @@ app.route('item-type', itemTypeRoute);
 app.route('unit-of-measure', unitOfMeasureRoute);
 app.route('department', departmentRoute);
 app.route('employee', employeeRoute);
+app.route('supplier', supplierRoute);
 
 serve({ 
   fetch: app.fetch,
