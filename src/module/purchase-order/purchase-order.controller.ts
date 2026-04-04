@@ -15,16 +15,23 @@ export const getPuchaseOrderController = async (c: Context) => {
                     po.purchase_request_number,
                     po.supplier_id,
                     s.supplier_name,
-                    po.created_at
+                    po.created_at,
+                    IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
+                    IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price
                 FROM 
                     purchase_order po
+                LEFT JOIN
+                    purchase_order_item poi
+                ON
+                    po.purchase_order_id = poi.purchase_order_id
                 LEFT JOIN
                     supplier s
                 ON
                     po.supplier_id = s.supplier_id
+                GROUP 
+                    BY po.purchase_order_id
             `,
         )
-
 
         return c.json(poRows)
 
@@ -37,6 +44,98 @@ export const getPuchaseOrderController = async (c: Context) => {
             message: "Failed to fetch PO items."
         }, 500);
     }
+
+}
+
+
+export const getSinglePurchaseOrderController = async (c: Context) => {
+
+
+    try {
+
+        const id = c.req.param('purchase_order_id');
+
+        console.log(id)
+
+        const [rows]: any = await pool.query(
+            `
+                SELECT 
+                    po.*,
+                    IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
+                    IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price,
+                    CONCAT(
+                        '[',
+                        IFNULL(
+                            GROUP_CONCAT(
+                                JSON_OBJECT(
+                                    'purchase_order_item_id', poi.purchase_order_item_id,
+                                    'purchase_order_id', poi.purchase_order_id,
+                                    'item_id', poi.item_id,
+                                    'item_name', i.item_name,
+                                    'brand_name', b.brand_name,
+                                    'category_name', c.category_name,
+                                    'item_type_name', it.item_type_name,
+                                    'unit_of_measure_name', uom.unit_of_measure_name,
+                                    'employee_id', poi.employee_id,
+                                    'ordered_quantity', poi.ordered_quantity,
+                                    'price', poi.price
+                                )
+                            ),
+                            ''
+                        ),
+                        ']'
+                    ) AS purchase_order_item
+                FROM 
+                    purchase_order po
+                LEFT JOIN 
+                    purchase_order_item poi
+                ON 
+                    po.purchase_order_id = poi.purchase_order_id
+                LEFT JOIN 
+                    item i
+                ON 
+                    poi.item_id = i.item_id
+                LEFT JOIN 
+                    brand b
+                ON 
+                    i.brand_id = b.brand_id
+                LEFT JOIN 
+                    category c
+                ON 
+                    i.category_id = c.category_id
+                LEFT JOIN 
+                    item_type it
+                ON 
+                    i.item_type_id = it.item_type_id
+                LEFT JOIN 
+                    unit_of_measure uom
+                ON 
+                    i.unit_of_measure_id = uom.unit_of_measure_id
+                WHERE 
+                    po.purchase_order_id = ?
+                GROUP 
+                    BY po.purchase_order_id
+            `,
+            [id]
+        )
+
+        const result = {
+            ...rows[0],
+            purchase_order_item: JSON.parse(rows[0].purchase_order_item || '[]')
+        }
+
+        return c.json(result)
+
+    }
+
+    catch (err) {
+        console.log(err);
+        return c.json({
+            success: false,
+            message: "Failed to fetch PO item."
+        }, 500);
+    }
+
 
 }
 
@@ -129,16 +228,128 @@ export const createPurchaseOrderController = async (c: any) => {
 export const updatePurchaseOrderController = async (c: any) => {
 
 
-    try {
-        return c.json({
-            success: true
-        })
-    }
+    const conn = await pool.getConnection()
 
-    catch (err) {
+    try {
+
+        const { 
+            purchase_order_id,
+            purchase_request_number, 
+            purchase_order_number, 
+            purchase_order_date, 
+            supplier_id, 
+            purchase_order_item 
+        } = c.req.valid('json');
+
+        await conn.beginTransaction();
+
+        await conn.query(
+            `
+                UPDATE 
+                    purchase_order 
+                SET
+                    purchase_request_number = ?,
+                    purchase_order_number = ?,
+                    purchase_order_date = ?,
+                    supplier_id = ?
+                WHERE 
+                    purchase_order_id = ?
+            `,
+            [
+                purchase_request_number,
+                purchase_order_number,
+                purchase_order_date,
+                supplier_id,
+                purchase_order_id
+            ]
+        );
+
+        await conn.query(
+            `
+                UPDATE 
+                    purchase_order_item
+                SET
+                    is_del = 1
+                WHERE 
+                    purchase_order_id = ?
+            `,
+            [purchase_order_id]
+        );
+
+        if (purchase_order_item && purchase_order_item.length > 0) {
+
+            for (const item of purchase_order_item) {
+
+                if (item.purchase_order_id) {
+                    await conn.query(
+                        `
+                            UPDATE 
+                                purchase_order_item 
+                            SET
+                                item_id = ?,
+                                employee_id = ?,
+                                ordered_quantity = ?,
+                                price = ?,
+                                is_del = 0
+                            WHERE 
+                                purchase_order_item_id = ? AND 
+                                purchase_order_id = ?
+                        `,
+                        [
+                            item.item_id,
+                            item.employee_id,
+                            item.ordered_quantity,
+                            item.price,
+                            item.purchase_order_item_id,
+                            purchase_order_id
+                        ]
+                    );
+                } else {
+                    await conn.query(
+                        `
+                            INSERT INTO 
+                                purchase_order_item (
+                                    purchase_order_id,
+                                    item_id,
+                                    employee_id,
+                                    ordered_quantity,
+                                    price,
+                                    is_del
+                                ) VALUES (?, ?, ?, ?, ?, 0
+                            )
+                        `,
+                        [
+                            purchase_order_id,
+                            item.item_id,
+                            item.employee_id,
+                            item.ordered_quantity,
+                            item.price
+                        ]
+                    );
+                }
+            }
+
+        }
+
+        await conn.commit();
+
         return c.json({
-            success: false
-        }, 500)
+            success: true,
+            message: `'${purchase_order_number}' updated successfully.`
+        });
+
+    } catch (err) {
+
+        console.log(err);
+        await conn.rollback();
+
+        return c.json({
+            success: false,
+            message: `Failed to update PO.`
+        }, 500);
+
+    } finally {
+        conn.release();
     }
 
 
