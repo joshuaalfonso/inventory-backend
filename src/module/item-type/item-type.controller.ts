@@ -34,7 +34,7 @@ export const getItemTypeController = async (c: Context) => {
         console.log(err);
         return c.json({
             success: false,
-            message: "Failed to fetch item type"
+            message: "Failed to fetch item type."
         }, 500);
     }
 
