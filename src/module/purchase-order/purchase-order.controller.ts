@@ -1,12 +1,14 @@
 import type { Context } from "hono"
 import { pool } from "../../config/connection.js"
+import { formatISO_PH } from "../../shared/util/formatDate.js";
+import type { PurchaseOrderList } from "./purchase-order.model.js";
 
 
 export const getPuchaseOrderController = async (c: Context) => {
 
     try {
 
-        const [poRows] = await pool.query(
+        const [poRows]: any = await pool.query(
             `
                 SELECT 
                     po.purchase_order_id,
@@ -24,6 +26,8 @@ export const getPuchaseOrderController = async (c: Context) => {
                     purchase_order_item poi
                 ON
                     po.purchase_order_id = poi.purchase_order_id
+                AND
+                    poi.is_del = 0
                 LEFT JOIN
                     supplier s
                 ON
@@ -33,7 +37,12 @@ export const getPuchaseOrderController = async (c: Context) => {
             `,
         )
 
-        return c.json(poRows)
+        const formatted = poRows.map((item: any) => ({
+            ...item,
+            purchase_order_date: formatISO_PH(item.purchase_order_date)
+        })) as PurchaseOrderList;
+
+        return c.json(formatted)
 
     }
 
@@ -55,12 +64,11 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
 
         const id = c.req.param('purchase_order_id');
 
-        console.log(id)
-
         const [rows]: any = await pool.query(
             `
                 SELECT 
                     po.*,
+                    s.supplier_name,
                     IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
                     IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price,
                     CONCAT(
@@ -77,6 +85,8 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
                                     'item_type_name', it.item_type_name,
                                     'unit_of_measure_name', uom.unit_of_measure_name,
                                     'employee_id', poi.employee_id,
+                                    'employee_name', e.employee_name,
+                                    'department_name', dept.department_name,
                                     'ordered_quantity', poi.ordered_quantity,
                                     'price', poi.price
                                 )
@@ -91,6 +101,11 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
                     purchase_order_item poi
                 ON 
                     po.purchase_order_id = poi.purchase_order_id
+                AND poi.is_del = 0
+                LEFT JOIN
+                    supplier s
+                ON
+                    po.supplier_id = s.supplier_id
                 LEFT JOIN 
                     item i
                 ON 
@@ -111,6 +126,14 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
                     unit_of_measure uom
                 ON 
                     i.unit_of_measure_id = uom.unit_of_measure_id
+                LEFT JOIN 
+                    employee e
+                ON 
+                    poi.employee_id = e.employee_id
+                LEFT JOIN 
+                    department dept
+                ON 
+                    e.department_id = dept.department_id
                 WHERE 
                     po.purchase_order_id = ?
                 GROUP 
@@ -121,8 +144,9 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
 
         const result = {
             ...rows[0],
+            purchase_order_date: formatISO_PH(rows[0].purchase_order_date),
             purchase_order_item: JSON.parse(rows[0].purchase_order_item || '[]')
-        }
+        } as PurchaseOrderList
 
         return c.json(result)
 
