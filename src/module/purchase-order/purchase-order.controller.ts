@@ -35,11 +35,84 @@ export const getPuchaseOrderController = async (c: Context) => {
                 GROUP 
                     BY po.purchase_order_id
             `,
+            // `
+            //     SELECT 
+            //         po.*,
+            //         s.supplier_name,
+            //         IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
+            //         IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price,
+            //         CONCAT(
+            //             '[',
+            //             IFNULL(
+            //                 GROUP_CONCAT(
+            //                     JSON_OBJECT(
+            //                         'purchase_order_item_id', poi.purchase_order_item_id,
+            //                         'purchase_order_id', poi.purchase_order_id,
+            //                         'item_id', poi.item_id,
+            //                         'item_name', i.item_name,
+            //                         'brand_name', b.brand_name,
+            //                         'category_name', c.category_name,
+            //                         'item_type_name', it.item_type_name,
+            //                         'unit_of_measure_name', uom.unit_of_measure_name,
+            //                         'employee_id', poi.employee_id,
+            //                         'employee_name', e.employee_name,
+            //                         'department_name', dept.department_name,
+            //                         'ordered_quantity', poi.ordered_quantity,
+            //                         'price', poi.price
+            //                     )
+            //                 ),
+            //                 ''
+            //             ),
+            //             ']'
+            //         ) AS purchase_order_item
+            //     FROM 
+            //         purchase_order po
+            //     LEFT JOIN 
+            //         purchase_order_item poi
+            //     ON 
+            //         po.purchase_order_id = poi.purchase_order_id
+            //     AND poi.is_del = 0
+            //     LEFT JOIN
+            //         supplier s
+            //     ON
+            //         po.supplier_id = s.supplier_id
+            //     LEFT JOIN 
+            //         item i
+            //     ON 
+            //         poi.item_id = i.item_id
+            //     LEFT JOIN 
+            //         brand b
+            //     ON 
+            //         i.brand_id = b.brand_id
+            //     LEFT JOIN 
+            //         category c
+            //     ON 
+            //         i.category_id = c.category_id
+            //     LEFT JOIN 
+            //         item_type it
+            //     ON 
+            //         i.item_type_id = it.item_type_id
+            //     LEFT JOIN 
+            //         unit_of_measure uom
+            //     ON 
+            //         i.unit_of_measure_id = uom.unit_of_measure_id
+            //     LEFT JOIN 
+            //         employee e
+            //     ON 
+            //         poi.employee_id = e.employee_id
+            //     LEFT JOIN 
+            //         department dept
+            //     ON 
+            //         e.department_id = dept.department_id
+            //     GROUP 
+            //         BY po.purchase_order_id
+            // `
         )
 
         const formatted = poRows.map((item: any) => ({
             ...item,
-            purchase_order_date: formatISO_PH(item.purchase_order_date)
+            purchase_order_date: formatISO_PH(item.purchase_order_date),
+            // purchase_order_item: JSON.parse(poRows[0].purchase_order_item || '[]')
         })) as PurchaseOrderList;
 
         return c.json(formatted)
@@ -166,8 +239,12 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
 const ALLOWED_SORT_FIELDS = [
   'purchase_order_id',
   'purchase_order_date',
+  'purchase_order_number',
+  'purchase_request_number',
+  'supplier_name',
   'total_price',
-  'total_quantity'
+  'total_quantity',
+  'created_at'
 ]
 
 const ALLOWED_FILTERS = [
@@ -177,27 +254,30 @@ const ALLOWED_FILTERS = [
 
 export const getPaginatedPurchaseOrdersController = async (c: Context) => {
   try {
-    const query = c.req.query()
+    const query = c.req.query();
 
-    // 📄 Pagination
+    console.log(query)
+
+    // pagination
     const page = parseInt(query.page || '1')
     const limit = parseInt(query.limit || '10')
     const offset = (page - 1) * limit
 
-    // 🔎 Filters
+    // filters
     let where: string[] = ['po.is_del = 0']
     let params: any[] = []
 
     for (const key of ALLOWED_FILTERS) {
       const value = query[key]
-
+        
       if (value) {
         where.push(`po.${key} = ?`)
         params.push(value)
       }
+
     }
 
-    // 🔍 Optional search (supplier name)
+    // optional search (supplier name)
     if (query.supplier_name) {
       where.push(`s.supplier_name LIKE ?`)
       params.push(`%${query.supplier_name}%`)
@@ -208,27 +288,27 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
             (
                 s.supplier_name LIKE ?
                 OR po.purchase_order_number LIKE ?
-                OR po.purchase_request_number LIKE ?
+                OR po.purchase_request_number LIKE ? 
             )
         `)
 
         params.push(
-            `%${query.search}%`,
+            `%${query.search}%`, 
             `%${query.search}%`,
             `%${query.search}%`
-        )
+        ) 
     }
 
     const whereClause = `WHERE ${where.join(' AND ')}`
 
-    // 🔃 Sorting (safe)
+    // sorting (safe)
     const sort = ALLOWED_SORT_FIELDS.includes(query.sort)
       ? query.sort
       : 'purchase_order_date'
 
     const order = query.order === 'asc' ? 'ASC' : 'DESC'
 
-    // 🧠 MAIN QUERY (aggregated)
+    // MAIN QUERY (aggregated)
     const sql = `
       SELECT 
         po.purchase_order_id,
@@ -262,7 +342,7 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
 
     const [rows]: any = await pool.query(sql, [...params, limit, offset])
 
-    // 📊 COUNT QUERY (no LIMIT)
+    // COUNT QUERY (no LIMIT)
     const countSql = `
       SELECT COUNT(DISTINCT po.purchase_order_id) as total
       FROM purchase_order po
@@ -274,7 +354,7 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
     const [countResult]: any = await pool.query(countSql, params)
     const total = countResult[0].total
 
-    // 🎯 Format result
+    // format result
     const data = rows.map((row: any) => ({
       ...row,
       purchase_order_date: formatISO_PH(row.purchase_order_date),
