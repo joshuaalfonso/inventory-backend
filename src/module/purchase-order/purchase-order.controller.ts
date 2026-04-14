@@ -253,128 +253,146 @@ const ALLOWED_FILTERS = [
 ]
 
 export const getPaginatedPurchaseOrdersController = async (c: Context) => {
-  try {
-    const query = c.req.query();
+    try {
+        const query = c.req.query();
 
-    console.log(query)
+        console.log(query)
 
-    // pagination
-    const page = parseInt(query.page || '1')
-    const limit = parseInt(query.limit || '10')
-    const offset = (page - 1) * limit
+        // pagination
+        const page = parseInt(query.page || '1')
+        const limit = parseInt(query.limit || '10')
+        const offset = (page - 1) * limit
 
-    // filters
-    let where: string[] = ['po.is_del = 0']
-    let params: any[] = []
+        // filters
+        let where: string[] = ['po.is_del = 0']
+        let params: any[] = []
 
-    for (const key of ALLOWED_FILTERS) {
-      const value = query[key]
+        for (const key of ALLOWED_FILTERS) {
+        const value = query[key]
+            
+        if (value) {
+            where.push(`po.${key} = ?`)
+            params.push(value)
+        }
+
+        }
+
+        // optional search (supplier name)
+        if (query.supplier_name) {
+            where.push(`s.supplier_name LIKE ?`)
+            params.push(`%${query.supplier_name}%`)
+        }
+
+        if (query.search) {
+            where.push(`
+                (
+                    s.supplier_name LIKE ?
+                    OR po.purchase_order_number LIKE ?
+                    OR po.purchase_request_number LIKE ? 
+                )
+            `)
+
+            params.push(
+                `%${query.search}%`, 
+                `%${query.search}%`,
+                `%${query.search}%`
+            ) 
+        }
+
+        const whereClause = `WHERE ${where.join(' AND ')}`
+
+        // sorting (safe)
+        const sort = ALLOWED_SORT_FIELDS.includes(query.sort)
+        ? query.sort
+        : 'purchase_order_date'
+
+        const order = query.order === 'asc' ? 'ASC' : 'DESC'
+
+        // MAIN QUERY (aggregated)
+        const sql = `
+        SELECT 
+            po.purchase_order_id,
+            po.purchase_order_number,
+            po.purchase_order_date,
+            po.purchase_request_number,
+            po.supplier_id,
+            s.supplier_name,
+            po.created_at,
+
+            IFNULL(poi.total_quantity, 0) AS total_quantity,
+            IFNULL(poi.total_price, 0) AS total_price,
+            IFNULL(ii.total_delivered, 0) AS total_delivered
+
+        FROM purchase_order po
+
+        LEFT JOIN (
+            SELECT 
+                purchase_order_id,
+                SUM(ordered_quantity) AS total_quantity,
+                SUM(ordered_quantity * price) AS total_price
+            FROM purchase_order_item
+            WHERE is_del = 0
+            GROUP BY purchase_order_id
+        ) poi ON po.purchase_order_id = poi.purchase_order_id
         
-      if (value) {
-        where.push(`po.${key} = ?`)
-        params.push(value)
-      }
+        LEFT JOIN (
+            SELECT 
+                poi.purchase_order_id,
+                SUM(ii.received_quantity) AS total_delivered
+            FROM incoming_item ii
+            JOIN purchase_order_item poi 
+                ON ii.purchase_order_item_id = poi.purchase_order_item_id
+            WHERE poi.is_del = 0
+            GROUP BY poi.purchase_order_id
+        ) ii ON po.purchase_order_id = ii.purchase_order_id
 
+        LEFT JOIN supplier s
+            ON po.supplier_id = s.supplier_id
+
+        ${whereClause}
+
+        GROUP BY po.purchase_order_id
+
+        ORDER BY ${sort} ${order}
+
+        LIMIT ? OFFSET ?
+        `
+
+        const [rows]: any = await pool.query(sql, [...params, limit, offset])
+
+        // COUNT QUERY (no LIMIT)
+        const countSql = `
+            SELECT COUNT(DISTINCT po.purchase_order_id) as total
+            FROM purchase_order po
+            LEFT JOIN supplier s
+                ON po.supplier_id = s.supplier_id
+            ${whereClause}
+        `
+
+        const [countResult]: any = await pool.query(countSql, params)
+        const total = countResult[0].total
+
+        // format result
+        const data = rows.map((row: any) => ({
+            ...row,
+            purchase_order_date: formatISO_PH(row.purchase_order_date),
+        }))
+
+        return c.json({
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+            data,
+        })
+
+    } catch (err) {
+        console.error(err)
+        return c.json({
+        success: false,
+        message: 'Failed to fetch purchase orders.'
+        }, 500)
     }
-
-    // optional search (supplier name)
-    if (query.supplier_name) {
-      where.push(`s.supplier_name LIKE ?`)
-      params.push(`%${query.supplier_name}%`)
-    }
-
-    if (query.search) {
-        where.push(`
-            (
-                s.supplier_name LIKE ?
-                OR po.purchase_order_number LIKE ?
-                OR po.purchase_request_number LIKE ? 
-            )
-        `)
-
-        params.push(
-            `%${query.search}%`, 
-            `%${query.search}%`,
-            `%${query.search}%`
-        ) 
-    }
-
-    const whereClause = `WHERE ${where.join(' AND ')}`
-
-    // sorting (safe)
-    const sort = ALLOWED_SORT_FIELDS.includes(query.sort)
-      ? query.sort
-      : 'purchase_order_date'
-
-    const order = query.order === 'asc' ? 'ASC' : 'DESC'
-
-    // MAIN QUERY (aggregated)
-    const sql = `
-      SELECT 
-        po.purchase_order_id,
-        po.purchase_order_number,
-        po.purchase_order_date,
-        po.purchase_request_number,
-        po.supplier_id,
-        s.supplier_name,
-        po.created_at,
-
-        IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
-        IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price
-
-      FROM purchase_order po
-
-      LEFT JOIN purchase_order_item poi
-        ON po.purchase_order_id = poi.purchase_order_id
-        AND poi.is_del = 0
-
-      LEFT JOIN supplier s
-        ON po.supplier_id = s.supplier_id
-
-      ${whereClause}
-
-      GROUP BY po.purchase_order_id
-
-      ORDER BY ${sort} ${order}
-
-      LIMIT ? OFFSET ?
-    `
-
-    const [rows]: any = await pool.query(sql, [...params, limit, offset])
-
-    // COUNT QUERY (no LIMIT)
-    const countSql = `
-      SELECT COUNT(DISTINCT po.purchase_order_id) as total
-      FROM purchase_order po
-      LEFT JOIN supplier s
-        ON po.supplier_id = s.supplier_id
-      ${whereClause}
-    `
-
-    const [countResult]: any = await pool.query(countSql, params)
-    const total = countResult[0].total
-
-    // format result
-    const data = rows.map((row: any) => ({
-      ...row,
-      purchase_order_date: formatISO_PH(row.purchase_order_date),
-    }))
-
-    return c.json({
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-      data,
-    })
-
-  } catch (err) {
-    console.error(err)
-    return c.json({
-      success: false,
-      message: 'Failed to fetch purchase orders.'
-    }, 500)
-  }
 }
 
 

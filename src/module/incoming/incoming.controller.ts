@@ -75,7 +75,7 @@ export const createIncomingController = async (c: any) => {
                         incomingId,
                         item.purchase_order_item_id,
                         item.item_id,
-                        item.received_quantity
+                        item.received_quantity 
                     ]
                 );
 
