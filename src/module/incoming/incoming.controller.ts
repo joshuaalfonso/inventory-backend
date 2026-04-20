@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { pool } from "../../config/connection.js";
+import { generateAssetTag } from "./incoming.service.js";
 
 
 
@@ -59,7 +60,7 @@ export const createIncomingController = async (c: any) => {
                 }
 
                 // Insert incoming_item
-                await conn.query(
+                const [incomingItemResult]:any =  await conn.query(
                     `
                         INSERT INTO 
                             incoming_item (
@@ -79,17 +80,81 @@ export const createIncomingController = async (c: any) => {
                     ]
                 );
 
-                await conn.query(
-                    `
-                        INSERT INTO 
-                            consumable_stock (item_id, quantity)
-                        VALUES 
-                            (?, ?)
-                        ON DUPLICATE KEY UPDATE
-                            quantity = quantity + VALUES(quantity)
-                    `,
-                    [item.item_id, item.received_quantity]
-                );
+                // await conn.query(
+                //     `
+                //         INSERT INTO 
+                //             consumable_stock (item_id, quantity)
+                //         VALUES 
+                //             (?, ?)
+                //         ON DUPLICATE KEY UPDATE
+                //             quantity = quantity + VALUES(quantity)
+                //     `,
+                //     [item.item_id, item.received_quantity]
+                // );
+
+                //  consumable
+                if (item.item_type_name == "Consumable") {
+
+                    await conn.query(
+                        `
+                            INSERT INTO 
+                                consumable_stock (item_id, quantity)
+                            VALUES 
+                                (?, ?)
+                            ON 
+                                DUPLICATE KEY 
+                            UPDATE
+                                quantity = quantity + VALUES(quantity)
+                    `, [item.item_id, item.received_quantity]);
+
+                }
+
+                // asset
+                if (item.item_type_name == "Asset") {
+
+                    if (!item.asset_item) {
+                        throw new Error("Asset is empty");
+                    }
+
+                    for (const asset of item.asset_item) {
+
+                        const serial = asset.serial_number?.trim();
+
+                        const cleanSerial = serial === "" ? null : serial;
+
+                        if (cleanSerial) {
+
+                            const [rows]: any = await conn.query(`
+                                SELECT asset_id FROM asset WHERE serial_number = ?
+                            `, [cleanSerial]);
+
+                            if (rows.length > 0) {
+                                throw new Error(`Duplicate serial number: ${cleanSerial}`);
+                            }
+
+                        }
+
+                        // generate asset tag
+                        const assetTag = await generateAssetTag(conn, item.item_id);
+
+                        await conn.query(`
+                            INSERT INTO asset (
+                                asset_tag,
+                                incoming_item_id,
+                                item_id,
+                                serial_number
+                            )
+                            VALUES (?, ?, ?, ?)
+                        `, [
+                            assetTag,
+                            incomingItemResult.insertId,
+                            item.item_id,
+                            cleanSerial,
+                        ]);
+                        
+                    }
+
+                }
 
             }
 
@@ -104,12 +169,12 @@ export const createIncomingController = async (c: any) => {
 
     }
 
-    catch (err) {
-        console.log(err)
+    catch (err: any) {
+        // console.log(err) 
         await conn.rollback();
         return c.json({
             success: false,
-            message: `Failed to create.`
+            message: err.message || `Failed to create.`,
         }, 500)
     }
 

@@ -8,13 +8,14 @@ export const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "mydb",
   waitForConnections: true,
+  port: Number(process.env.DB_PORT || 3306)
 //   connectionLimit: 10,
 //   queueLimit: 0
 });
 
 
 export const testConnection = async () => {
-  try {
+  try { 
     const conn = await pool.getConnection();
     console.log("Database is alive!");
     conn.release();

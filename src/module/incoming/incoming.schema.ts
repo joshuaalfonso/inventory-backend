@@ -2,6 +2,9 @@ import z from "zod";
 
 
 
+export const assetItemSchema = z.object({
+  serial_number: z.string().optional()
+})
 
 
 
@@ -12,6 +15,7 @@ export const incomingItemSchema = z.object({
   item_type_name: z.string(),
   ordered_quantity: z.number().nonnegative(),
   received_quantity: z.number().nonnegative(),
+  asset_item: z.array(assetItemSchema)
 });
 
 
