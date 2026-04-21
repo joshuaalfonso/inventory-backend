@@ -13,6 +13,7 @@ import { employeeRoute } from './module/employee/employee.route.js';
 import { supplierRoute } from './module/supplier/supplier.route.js';
 import { purchaseOrderRoute } from './module/purchase-order/purchase-order.route.js';
 import { incomingRoute } from './module/incoming/incoming.route.js';
+import { inventoryConsumableRoute } from './module/inventory-consumable/inventory-consumable.route.js';
 
 const app = new Hono();
 
@@ -44,6 +45,7 @@ app.route('employee', employeeRoute);
 app.route('supplier', supplierRoute);
 app.route('purchase-order', purchaseOrderRoute);
 app.route('incoming', incomingRoute);
+app.route('inventory-consumable', inventoryConsumableRoute);
 
 
 

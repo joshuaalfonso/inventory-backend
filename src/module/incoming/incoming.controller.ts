@@ -135,7 +135,7 @@ export const createIncomingController = async (c: any) => {
                         }
 
                         // generate asset tag
-                        const assetTag = await generateAssetTag(conn, item.item_id);
+                        const assetTag = await generateAssetTag(conn);
 
                         await conn.query(`
                             INSERT INTO asset (
@@ -144,7 +144,7 @@ export const createIncomingController = async (c: any) => {
                                 item_id,
                                 serial_number
                             )
-                            VALUES (?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?) 
                         `, [
                             assetTag,
                             incomingItemResult.insertId,

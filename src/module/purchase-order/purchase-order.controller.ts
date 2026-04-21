@@ -393,7 +393,7 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
         message: 'Failed to fetch purchase orders.'
         }, 500)
     }
-}
+} 
 
 
 export const createPurchaseOrderController = async (c: any) => {
@@ -419,9 +419,9 @@ export const createPurchaseOrderController = async (c: any) => {
                 purchase_order_number,
                 purchase_order_date,
                 supplier_id
-            ) VALUES (?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?)`, 
             [
-                purchase_request_number,
+                purchase_request_number, 
                 purchase_order_number,
                 purchase_order_date,
                 supplier_id
