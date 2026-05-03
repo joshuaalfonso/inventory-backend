@@ -15,6 +15,7 @@ export const pool = mysql.createPool({
 
 
 export const testConnection = async () => {
+
   try { 
     const conn = await pool.getConnection();
     console.log("Database is alive!");
@@ -23,4 +24,5 @@ export const testConnection = async () => {
     console.error("Database connection failed:", err);
     process.exit(1);
   }
+  
 }

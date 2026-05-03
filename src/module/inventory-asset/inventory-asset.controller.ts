@@ -1,20 +1,29 @@
 import { pool } from "../../config/connection.js";
-import type { InventoryConsumableList } from "./inventory-consumable.model.js";
+import type { Asset } from "./inventory-asset.model.js";
 
 
 
 
 
 
+export const getInventoryAssetController = async (c: any) => {
 
-export const getInventoryConsumableController = async (c: any) => {
 
 
     try {
-        
+            
         const [rows] = await pool.query(
             `
                 SELECT 
+                    a.serial_number,
+                    a.asset_tag,
+                    a.incoming_item_id,
+                    ini.incoming_id,
+                    a.status_id,
+                    a.condition,
+                    a.warranty_expiry,
+                    a.assigned_to,
+                    ast.name as status,
                     i.item_id,
                     i.item_name,
                     i.brand_id,
@@ -25,10 +34,17 @@ export const getInventoryConsumableController = async (c: any) => {
                     it.item_type_name,
                     i.unit_of_measure_id,
                     uom.unit_of_measure_name,
-                    COALESCE(cs.quantity, 0) AS quantity,
-                    i.created_at
+                    a.created_at
                 FROM 
+                    asset a
+                LEFT JOIN
+                    incoming_item ini
+                ON
+                    a.incoming_item_id = ini.incoming_item_id
+                LEFT JOIN
                     item i
+                ON
+                    i.item_id = a.item_id
                 LEFT JOIN 
                     brand b
                 ON
@@ -46,30 +62,28 @@ export const getInventoryConsumableController = async (c: any) => {
                 ON 
                     i.unit_of_measure_id = uom.unit_of_measure_id
                 LEFT JOIN
-                    consumable_stock cs
-                ON
-                    i.item_id = cs.item_id
+                    asset_status ast
+                ON 
+                    a.status_id = ast.asset_status_id
 
                 WHERE
-                    i.is_del = ?
-                    AND it.item_type_name = ?
+                    i.is_del = 0
                 ORDER BY
                     i.item_name DESC
-            `,
-            [0, 'Consumable']
+            `
         );
 
-        const items = rows as InventoryConsumableList[];
+        const items = rows as Asset[];
 
         return c.json(items)
- 
+    
     } catch (err) {
         console.log(err);
         return c.json({
             success: false,
-            message: "Failed to fetch items"
+            message: "Failed to fetch asset"
         }, 500);
     }
 
-}
 
+}

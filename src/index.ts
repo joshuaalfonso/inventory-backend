@@ -14,6 +14,7 @@ import { supplierRoute } from './module/supplier/supplier.route.js';
 import { purchaseOrderRoute } from './module/purchase-order/purchase-order.route.js';
 import { incomingRoute } from './module/incoming/incoming.route.js';
 import { inventoryConsumableRoute } from './module/inventory-consumable/inventory-consumable.route.js';
+import { inventoryAssetRoute } from './module/inventory-asset/inventory-asset.route.js';
 
 const app = new Hono();
 
@@ -46,14 +47,17 @@ app.route('supplier', supplierRoute);
 app.route('purchase-order', purchaseOrderRoute);
 app.route('incoming', incomingRoute);
 app.route('inventory-consumable', inventoryConsumableRoute);
+app.route('inventory-asset', inventoryAssetRoute);
 
 
 
 serve({ 
   fetch: app.fetch,
-  port: 3000
+  port: 3000,
+  hostname: '0.0.0.0'
 }, (info) => {
   console.log(`Server is running on http://localhost:${info.port}`)
 })
 
 
+ 

@@ -313,10 +313,11 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
         SELECT 
             po.purchase_order_id,
             po.purchase_order_number,
-            po.purchase_order_date,
+            po.purchase_order_date, 
             po.purchase_request_number,
             po.supplier_id,
             s.supplier_name,
+            po.status,
             po.created_at,
 
             IFNULL(poi.total_quantity, 0) AS total_quantity,
