@@ -24,5 +24,6 @@ export const incomingSchema = z.object({
     incoming_id: z.number().default(0),
     purchase_order_id: z.number(),
     incoming_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    incoming_item: z.array(incomingItemSchema)
+    incoming_item: z.array(incomingItemSchema),
+    sales_invoice_number: z.string().min(5)
 });

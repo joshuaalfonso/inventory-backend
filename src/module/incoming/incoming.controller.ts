@@ -1,21 +1,184 @@
 import type { Context } from "hono";
 import { pool } from "../../config/connection.js";
 import { generateAssetTag } from "./incoming.service.js";
-
-
-
-
+import type { Incoming } from "./incoming.model.js";
+import { formatISO_PH } from "../../shared/util/formatDate.js";
 
 
 
 export const getIncomingController = async (c: Context) => {
 
-    return c.json({
-        success: true
-    })
+    try {
+        
+            const [rows] = await pool.query(
+                `
+                    SELECT 
+                        *
+                    FROM 
+                        incoming
+                    ORDER BY
+                        incoming.created_at DESC;
+                `,
+                [0]
+            );
+    
+            const incomings = rows as Incoming[];
+    
+            return c.json(incomings)
+    }
+
+
+    catch (err) {
+        console.log(err)
+        return c.json({
+            success: false,
+            message: 'Failed to load incoming'
+        })
+    }
 
 
 }
+
+
+const ALLOWED_SORT_FIELDS = [
+  'purchase_order_number',
+  'incoming_date',
+  'sales_invoice_number',
+  'total_received',
+  'created_at'
+]
+
+const ALLOWED_FILTERS = [
+  'purchase_order_id'
+]
+
+export const getPaginatedIncomingController = async (c: Context) => {
+    try {
+        const query = c.req.query();
+
+        console.log(query)
+
+        // pagination
+        const page = parseInt(query.page || '1')
+        const limit = parseInt(query.limit || '10')
+        const offset = (page - 1) * limit
+
+        // filters
+        let where: string[] = ['i.is_del = 0']
+        let params: any[] = []
+
+        for (const key of ALLOWED_FILTERS) {
+        const value = query[key]
+            
+        if (value) {
+            where.push(`po.${key} = ?`)
+            params.push(value)
+        }
+
+        }
+
+        if (query.search) {
+            where.push(`
+                (
+                    i.sales_invoice_number LIKE ?
+                    OR po.purchase_order_number LIKE ?
+                )
+            `)
+
+            params.push(
+                `%${query.search}%`, 
+                `%${query.search}%`
+            ) 
+        }
+
+        const whereClause = `WHERE ${where.join(' AND ')}`
+
+        // sorting (safe)
+        const sort = ALLOWED_SORT_FIELDS.includes(query.sort)
+        ? query.sort
+        : 'created_at'
+
+        const order = query.order === 'asc' ? 'ASC' : 'DESC'
+
+        // main query (aggregated)
+
+        const sql = `
+            SELECT 
+                i.incoming_id,
+                i.sales_invoice_number,
+                i.incoming_date,
+                i.purchase_order_id, 
+                po.purchase_order_number,
+                i.created_at,
+
+                IFNULL(ii.total_received, 0) AS total_received
+
+            FROM incoming i
+
+            LEFT JOIN purchase_order po
+                ON i.purchase_order_id = po.purchase_order_id
+
+            LEFT JOIN (
+                SELECT 
+                    incoming_id,
+                    SUM(received_quantity) AS total_received
+                FROM 
+                    incoming_item
+                WHERE 
+                    is_del = 0
+                GROUP 
+                    BY incoming_id
+            ) ii ON i.incoming_id = ii.incoming_id
+
+            ${whereClause}
+
+            GROUP BY i.incoming_id
+
+            ORDER BY ${sort} ${order}
+
+            LIMIT ? OFFSET ?
+            `
+
+            const [rows]: any = await pool.query(sql, [...params, limit, offset])
+
+            // COUNT QUERY (no LIMIT)
+            const countSql = `
+                SELECT 
+                    COUNT(DISTINCT i.incoming_id) as total
+                FROM 
+                    incoming i
+                LEFT JOIN 
+                    purchase_order po
+                ON 
+                    i.purchase_order_id = po.purchase_order_id
+                ${whereClause}
+        `
+
+        const [countResult]: any = await pool.query(countSql, params)
+        const total = countResult[0].total
+
+        // format result
+        const data = rows.map((row: any) => ({
+            ...row,
+            incoming_date: formatISO_PH(row.incoming_date),
+        }))
+
+        return c.json({
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+            data,
+        })
+
+    } catch (err) {
+        console.error(err)
+        return c.json({
+        success: false,
+        message: 'Failed to fetch incoming'
+        }, 500)
+    }
+} 
 
 
 
@@ -29,7 +192,8 @@ export const createIncomingController = async (c: any) => {
         const { 
             purchase_order_id, 
             incoming_date,
-            incoming_item
+            incoming_item,
+            sales_invoice_number
         } = c.req.valid('json');
 
         await conn.beginTransaction();
@@ -39,13 +203,15 @@ export const createIncomingController = async (c: any) => {
                 INSERT INTO 
                     incoming (
                         purchase_order_id,
-                        incoming_date
+                        incoming_date,
+                        sales_invoice_number
                     ) 
-                VALUES (?, ?)
+                VALUES (?, ?, ?)
             `,
             [
                 purchase_order_id,
-                incoming_date
+                incoming_date,
+                sales_invoice_number
             ]
         );
 

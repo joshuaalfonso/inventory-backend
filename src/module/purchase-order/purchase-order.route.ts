@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { validator } from "../../lib/validators.js";
 import { purchaseOrderSchema } from "./purchase-order.schema.js";
-import { createPurchaseOrderController, getPaginatedPurchaseOrdersController, getPuchaseOrderController, getSinglePurchaseOrderController, updatePurchaseOrderController } from "./purchase-order.controller.js";
+import { createPurchaseOrderController, getPaginatedPurchaseOrdersController, getPendingPurchaseOrderController, getPuchaseOrderController, getSinglePurchaseOrderController, updatePurchaseOrderController } from "./purchase-order.controller.js";
 
 
 
@@ -16,7 +16,8 @@ export const purchaseOrderRoute = new Hono();
 
 purchaseOrderRoute.get('', getPuchaseOrderController),
 purchaseOrderRoute.get('/paginated', getPaginatedPurchaseOrdersController),
-purchaseOrderRoute.get('/:purchase_order_id', getSinglePurchaseOrderController)
+purchaseOrderRoute.get('/pending', getPendingPurchaseOrderController),
+purchaseOrderRoute.get('/:purchase_order_id', getSinglePurchaseOrderController),
 
 purchaseOrderRoute.post(
     '', 

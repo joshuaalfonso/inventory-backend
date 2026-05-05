@@ -35,78 +35,6 @@ export const getPuchaseOrderController = async (c: Context) => {
                 GROUP 
                     BY po.purchase_order_id
             `,
-            // `
-            //     SELECT 
-            //         po.*,
-            //         s.supplier_name,
-            //         IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
-            //         IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price,
-            //         CONCAT(
-            //             '[',
-            //             IFNULL(
-            //                 GROUP_CONCAT(
-            //                     JSON_OBJECT(
-            //                         'purchase_order_item_id', poi.purchase_order_item_id,
-            //                         'purchase_order_id', poi.purchase_order_id,
-            //                         'item_id', poi.item_id,
-            //                         'item_name', i.item_name,
-            //                         'brand_name', b.brand_name,
-            //                         'category_name', c.category_name,
-            //                         'item_type_name', it.item_type_name,
-            //                         'unit_of_measure_name', uom.unit_of_measure_name,
-            //                         'employee_id', poi.employee_id,
-            //                         'employee_name', e.employee_name,
-            //                         'department_name', dept.department_name,
-            //                         'ordered_quantity', poi.ordered_quantity,
-            //                         'price', poi.price
-            //                     )
-            //                 ),
-            //                 ''
-            //             ),
-            //             ']'
-            //         ) AS purchase_order_item
-            //     FROM 
-            //         purchase_order po
-            //     LEFT JOIN 
-            //         purchase_order_item poi
-            //     ON 
-            //         po.purchase_order_id = poi.purchase_order_id
-            //     AND poi.is_del = 0
-            //     LEFT JOIN
-            //         supplier s
-            //     ON
-            //         po.supplier_id = s.supplier_id
-            //     LEFT JOIN 
-            //         item i
-            //     ON 
-            //         poi.item_id = i.item_id
-            //     LEFT JOIN 
-            //         brand b
-            //     ON 
-            //         i.brand_id = b.brand_id
-            //     LEFT JOIN 
-            //         category c
-            //     ON 
-            //         i.category_id = c.category_id
-            //     LEFT JOIN 
-            //         item_type it
-            //     ON 
-            //         i.item_type_id = it.item_type_id
-            //     LEFT JOIN 
-            //         unit_of_measure uom
-            //     ON 
-            //         i.unit_of_measure_id = uom.unit_of_measure_id
-            //     LEFT JOIN 
-            //         employee e
-            //     ON 
-            //         poi.employee_id = e.employee_id
-            //     LEFT JOIN 
-            //         department dept
-            //     ON 
-            //         e.department_id = dept.department_id
-            //     GROUP 
-            //         BY po.purchase_order_id
-            // `
         )
 
         const formatted = poRows.map((item: any) => ({
@@ -236,6 +164,151 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
 
 }
 
+export const getPendingPurchaseOrderController = async (c: Context) => {
+
+
+    try {
+
+        const [rows]: any = await pool.query(`
+            SELECT 
+                po.purchase_order_id,
+                po.purchase_order_number,
+                po.purchase_order_date, 
+                s.supplier_name,
+                po.status,
+                po.created_at,
+
+                IFNULL(poi_total.total_quantity, 0) AS total_quantity,
+                IFNULL(ii.total_delivered, 0) AS total_delivered,
+
+                IFNULL(
+                    CONCAT( 
+                        '[',
+                            GROUP_CONCAT(
+                                JSON_OBJECT(
+                                    'purchase_order_item_id', poi_item.purchase_order_item_id,
+                                    'purchase_order_id', poi_item.purchase_order_id,
+                                    'item_id', poi_item.item_id,
+                                    'item_name', i.item_name,
+                                    'brand_name', b.brand_name,
+                                    'category_name', c.category_name,
+                                    'item_type_name', it.item_type_name,
+                                    'unit_of_measure_name', uom.unit_of_measure_name,
+                                    'employee_id', poi_item.employee_id,
+                                    'employee_name', e.employee_name,
+                                    'department_name', dept.department_name,
+                                    'ordered_quantity', poi_item.ordered_quantity,
+                                    'price', poi_item.price,
+                                    'total_received', IFNULL(ii_item.total_received, 0),
+                                    'remaining_quantity', 
+                                        (poi_item.ordered_quantity - IFNULL(ii_item.total_received, 0)) 
+                                )
+                                SEPARATOR ','
+                            ),
+                        ']'
+                    ),
+                    '[]'
+                ) AS purchase_order_item
+
+            FROM purchase_order po
+
+            LEFT JOIN 
+                purchase_order_item poi_item
+            ON 
+                po.purchase_order_id = poi_item.purchase_order_id
+                AND poi_item.is_del = 0
+
+            LEFT JOIN (
+                SELECT 
+                    purchase_order_id,
+                    SUM(ordered_quantity) AS total_quantity
+                FROM 
+                    purchase_order_item
+                WHERE 
+                    is_del = 0
+                GROUP BY 
+                    purchase_order_id
+            ) poi_total 
+            ON 
+                po.purchase_order_id = poi_total.purchase_order_id
+            
+            LEFT JOIN (
+                SELECT 
+                    poi.purchase_order_id,
+                    SUM(ii.received_quantity) AS total_delivered
+                FROM 
+                    incoming_item ii
+                JOIN 
+                    purchase_order_item poi 
+                ON 
+                    ii.purchase_order_item_id = poi.purchase_order_item_id
+                    AND ii.is_del = 0
+                WHERE 
+                    poi.is_del = 0
+                GROUP 
+                    BY poi.purchase_order_id
+            ) ii 
+            ON 
+                po.purchase_order_id = ii.purchase_order_id
+
+            LEFT JOIN (
+                SELECT 
+                    purchase_order_item_id,
+                    SUM(received_quantity) AS total_received
+                FROM 
+                    incoming_item
+                WHERE
+                    is_del = 0 
+                GROUP BY 
+                    purchase_order_item_id
+            ) ii_item 
+            ON 
+                poi_item.purchase_order_item_id = ii_item.purchase_order_item_id
+
+            LEFT JOIN supplier s
+                ON po.supplier_id = s.supplier_id
+
+            LEFT JOIN item i ON poi_item.item_id = i.item_id
+            LEFT JOIN brand b ON i.brand_id = b.brand_id
+            LEFT JOIN category c ON i.category_id = c.category_id
+            LEFT JOIN item_type it ON i.item_type_id = it.item_type_id
+            LEFT JOIN unit_of_measure uom ON i.unit_of_measure_id = uom.unit_of_measure_id
+            LEFT JOIN employee e ON poi_item.employee_id = e.employee_id
+            LEFT JOIN department dept ON e.department_id = dept.department_id
+
+            WHERE 
+                po.status = 'Cheque Released'
+
+            GROUP BY 
+                po.purchase_order_id
+
+            HAVING 
+                total_quantity > total_delivered
+
+            ORDER BY 
+                po.created_at DESC
+        `);
+
+        const formatted = rows.map((item: any)=> ({
+            ...item,
+            purchase_order_date: formatISO_PH(rows[0].purchase_order_date),
+            purchase_order_item: JSON.parse(rows[0].purchase_order_item || '[]')
+        })) as PurchaseOrderList[]
+
+        return c.json(formatted)
+
+    }
+
+    catch (err) {
+        console.log(err);
+        return c.json({
+            success: false,
+            message: "Failed to fetch pending po."
+        }, 500);
+    }
+
+}
+
 const ALLOWED_SORT_FIELDS = [
   'purchase_order_id',
   'purchase_order_date',
@@ -310,53 +383,53 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
 
         // MAIN QUERY (aggregated)
         const sql = `
-        SELECT 
-            po.purchase_order_id,
-            po.purchase_order_number,
-            po.purchase_order_date, 
-            po.purchase_request_number,
-            po.supplier_id,
-            s.supplier_name,
-            po.status,
-            po.created_at,
-
-            IFNULL(poi.total_quantity, 0) AS total_quantity,
-            IFNULL(poi.total_price, 0) AS total_price,
-            IFNULL(ii.total_delivered, 0) AS total_delivered
-
-        FROM purchase_order po
-
-        LEFT JOIN (
             SELECT 
-                purchase_order_id,
-                SUM(ordered_quantity) AS total_quantity,
-                SUM(ordered_quantity * price) AS total_price
-            FROM purchase_order_item
-            WHERE is_del = 0
-            GROUP BY purchase_order_id
-        ) poi ON po.purchase_order_id = poi.purchase_order_id
-        
-        LEFT JOIN (
-            SELECT 
-                poi.purchase_order_id,
-                SUM(ii.received_quantity) AS total_delivered
-            FROM incoming_item ii
-            JOIN purchase_order_item poi 
-                ON ii.purchase_order_item_id = poi.purchase_order_item_id
-            WHERE poi.is_del = 0
-            GROUP BY poi.purchase_order_id
-        ) ii ON po.purchase_order_id = ii.purchase_order_id
+                po.purchase_order_id,
+                po.purchase_order_number,
+                po.purchase_order_date, 
+                po.purchase_request_number,
+                po.supplier_id,
+                s.supplier_name,
+                po.status,
+                po.created_at,
 
-        LEFT JOIN supplier s
-            ON po.supplier_id = s.supplier_id
+                IFNULL(poi.total_quantity, 0) AS total_quantity,
+                IFNULL(poi.total_price, 0) AS total_price,
+                IFNULL(ii.total_delivered, 0) AS total_delivered
 
-        ${whereClause}
+            FROM purchase_order po
 
-        GROUP BY po.purchase_order_id
+            LEFT JOIN (
+                SELECT 
+                    purchase_order_id,
+                    SUM(ordered_quantity) AS total_quantity,
+                    SUM(ordered_quantity * price) AS total_price
+                FROM purchase_order_item
+                WHERE is_del = 0
+                GROUP BY purchase_order_id
+            ) poi ON po.purchase_order_id = poi.purchase_order_id
+            
+            LEFT JOIN (
+                SELECT 
+                    poi.purchase_order_id,
+                    SUM(ii.received_quantity) AS total_delivered
+                FROM incoming_item ii
+                JOIN purchase_order_item poi 
+                    ON ii.purchase_order_item_id = poi.purchase_order_item_id
+                WHERE poi.is_del = 0
+                GROUP BY poi.purchase_order_id
+            ) ii ON po.purchase_order_id = ii.purchase_order_id
 
-        ORDER BY ${sort} ${order}
+            LEFT JOIN supplier s
+                ON po.supplier_id = s.supplier_id
 
-        LIMIT ? OFFSET ?
+            ${whereClause}
+
+            GROUP BY po.purchase_order_id
+
+            ORDER BY ${sort} ${order}
+
+            LIMIT ? OFFSET ?
         `
 
         const [rows]: any = await pool.query(sql, [...params, limit, offset])
