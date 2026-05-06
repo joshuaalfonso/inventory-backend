@@ -1,49 +1,16 @@
 import type { Context } from "hono"
 import { pool } from "../../config/connection.js"
 import { formatISO_PH } from "../../shared/util/formatDate.js";
-import type { PurchaseOrderList } from "./purchase-order.model.js";
+import { getAllPurchaseOrder, getPendingPurchaseOrder, getSinglePendingPurchaseOrder, getSinglePurchaseOrder } from "./purchase-order.service.js";
 
 
 export const getPuchaseOrderController = async (c: Context) => {
 
     try {
 
-        const [poRows]: any = await pool.query(
-            `
-                SELECT 
-                    po.purchase_order_id,
-                    po.purchase_order_number,
-                    po.purchase_order_date,
-                    po.purchase_request_number,
-                    po.supplier_id,
-                    s.supplier_name,
-                    po.created_at,
-                    IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
-                    IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price
-                FROM 
-                    purchase_order po
-                LEFT JOIN
-                    purchase_order_item poi
-                ON
-                    po.purchase_order_id = poi.purchase_order_id
-                AND
-                    poi.is_del = 0
-                LEFT JOIN
-                    supplier s
-                ON
-                    po.supplier_id = s.supplier_id
-                GROUP 
-                    BY po.purchase_order_id
-            `,
-        )
+        const data = await getAllPurchaseOrder();
 
-        const formatted = poRows.map((item: any) => ({
-            ...item,
-            purchase_order_date: formatISO_PH(item.purchase_order_date),
-            // purchase_order_item: JSON.parse(poRows[0].purchase_order_item || '[]')
-        })) as PurchaseOrderList;
-
-        return c.json(formatted)
+        return c.json(data)
 
     }
 
@@ -61,95 +28,18 @@ export const getPuchaseOrderController = async (c: Context) => {
 export const getSinglePurchaseOrderController = async (c: Context) => {
 
 
+    const id = (c.req.param('purchase_order_id') || 0) as number;
+
+    if (!id) {
+        return c.json({ error: 'Missing required parameter: id' }, 400)
+    }
+
+
     try {
 
-        const id = c.req.param('purchase_order_id');
+        const data = await getSinglePurchaseOrder(id);
 
-        const [rows]: any = await pool.query( 
-            `
-                SELECT 
-                    po.*,
-                    s.supplier_name,
-                    IFNULL(SUM(poi.ordered_quantity), 0) AS total_quantity,
-                    IFNULL(SUM(poi.ordered_quantity * poi.price), 0) AS total_price,
-                    CONCAT(
-                        '[',
-                        IFNULL(
-                            GROUP_CONCAT(
-                                JSON_OBJECT(
-                                    'purchase_order_item_id', poi.purchase_order_item_id,
-                                    'purchase_order_id', poi.purchase_order_id,
-                                    'item_id', poi.item_id,
-                                    'item_name', i.item_name,
-                                    'brand_name', b.brand_name,
-                                    'category_name', c.category_name,
-                                    'item_type_name', it.item_type_name,
-                                    'unit_of_measure_name', uom.unit_of_measure_name,
-                                    'employee_id', poi.employee_id,
-                                    'employee_name', e.employee_name,
-                                    'department_name', dept.department_name,
-                                    'ordered_quantity', poi.ordered_quantity,
-                                    'price', poi.price
-                                )
-                            ),
-                            ''
-                        ),
-                        ']'
-                    ) AS purchase_order_item
-                FROM 
-                    purchase_order po
-                LEFT JOIN 
-                    purchase_order_item poi
-                ON 
-                    po.purchase_order_id = poi.purchase_order_id
-                AND poi.is_del = 0
-                LEFT JOIN
-                    supplier s
-                ON
-                    po.supplier_id = s.supplier_id
-                LEFT JOIN 
-                    item i
-                ON 
-                    poi.item_id = i.item_id
-                LEFT JOIN 
-                    brand b
-                ON 
-                    i.brand_id = b.brand_id
-                LEFT JOIN 
-                    category c
-                ON 
-                    i.category_id = c.category_id
-                LEFT JOIN 
-                    item_type it
-                ON 
-                    i.item_type_id = it.item_type_id
-                LEFT JOIN 
-                    unit_of_measure uom
-                ON 
-                    i.unit_of_measure_id = uom.unit_of_measure_id
-                LEFT JOIN 
-                    employee e
-                ON 
-                    poi.employee_id = e.employee_id
-                LEFT JOIN 
-                    department dept
-                ON 
-                    e.department_id = dept.department_id
-                WHERE 
-                    po.purchase_order_id = ?
-                GROUP 
-                    BY po.purchase_order_id
-            `,
-            [id]
-        )
-
-        const result = {
-            ...rows[0],
-            purchase_order_date: formatISO_PH(rows[0].purchase_order_date),
-            purchase_order_item: JSON.parse(rows[0].purchase_order_item || '[]')
-        } as PurchaseOrderList
-
-        return c.json(result)
+        return c.json(data)
 
     }
 
@@ -166,144 +56,41 @@ export const getSinglePurchaseOrderController = async (c: Context) => {
 
 export const getPendingPurchaseOrderController = async (c: Context) => {
 
-
     try {
-
-        const [rows]: any = await pool.query(`
-            SELECT 
-                po.purchase_order_id,
-                po.purchase_order_number,
-                po.purchase_order_date, 
-                s.supplier_name,
-                po.status,
-                po.created_at,
-
-                IFNULL(poi_total.total_quantity, 0) AS total_quantity,
-                IFNULL(ii.total_delivered, 0) AS total_delivered,
-
-                IFNULL(
-                    CONCAT( 
-                        '[',
-                            GROUP_CONCAT(
-                                JSON_OBJECT(
-                                    'purchase_order_item_id', poi_item.purchase_order_item_id,
-                                    'purchase_order_id', poi_item.purchase_order_id,
-                                    'item_id', poi_item.item_id,
-                                    'item_name', i.item_name,
-                                    'brand_name', b.brand_name,
-                                    'category_name', c.category_name,
-                                    'item_type_name', it.item_type_name,
-                                    'unit_of_measure_name', uom.unit_of_measure_name,
-                                    'employee_id', poi_item.employee_id,
-                                    'employee_name', e.employee_name,
-                                    'department_name', dept.department_name,
-                                    'ordered_quantity', poi_item.ordered_quantity,
-                                    'price', poi_item.price,
-                                    'total_received', IFNULL(ii_item.total_received, 0),
-                                    'remaining_quantity', 
-                                        (poi_item.ordered_quantity - IFNULL(ii_item.total_received, 0)) 
-                                )
-                                SEPARATOR ','
-                            ),
-                        ']'
-                    ),
-                    '[]'
-                ) AS purchase_order_item
-
-            FROM purchase_order po
-
-            LEFT JOIN 
-                purchase_order_item poi_item
-            ON 
-                po.purchase_order_id = poi_item.purchase_order_id
-                AND poi_item.is_del = 0
-
-            LEFT JOIN (
-                SELECT 
-                    purchase_order_id,
-                    SUM(ordered_quantity) AS total_quantity
-                FROM 
-                    purchase_order_item
-                WHERE 
-                    is_del = 0
-                GROUP BY 
-                    purchase_order_id
-            ) poi_total 
-            ON 
-                po.purchase_order_id = poi_total.purchase_order_id
-            
-            LEFT JOIN (
-                SELECT 
-                    poi.purchase_order_id,
-                    SUM(ii.received_quantity) AS total_delivered
-                FROM 
-                    incoming_item ii
-                JOIN 
-                    purchase_order_item poi 
-                ON 
-                    ii.purchase_order_item_id = poi.purchase_order_item_id
-                    AND ii.is_del = 0
-                WHERE 
-                    poi.is_del = 0
-                GROUP 
-                    BY poi.purchase_order_id
-            ) ii 
-            ON 
-                po.purchase_order_id = ii.purchase_order_id
-
-            LEFT JOIN (
-                SELECT 
-                    purchase_order_item_id,
-                    SUM(received_quantity) AS total_received
-                FROM 
-                    incoming_item
-                WHERE
-                    is_del = 0 
-                GROUP BY 
-                    purchase_order_item_id
-            ) ii_item 
-            ON 
-                poi_item.purchase_order_item_id = ii_item.purchase_order_item_id
-
-            LEFT JOIN supplier s
-                ON po.supplier_id = s.supplier_id
-
-            LEFT JOIN item i ON poi_item.item_id = i.item_id
-            LEFT JOIN brand b ON i.brand_id = b.brand_id
-            LEFT JOIN category c ON i.category_id = c.category_id
-            LEFT JOIN item_type it ON i.item_type_id = it.item_type_id
-            LEFT JOIN unit_of_measure uom ON i.unit_of_measure_id = uom.unit_of_measure_id
-            LEFT JOIN employee e ON poi_item.employee_id = e.employee_id
-            LEFT JOIN department dept ON e.department_id = dept.department_id
-
-            WHERE 
-                po.status = 'Cheque Released'
-
-            GROUP BY 
-                po.purchase_order_id
-
-            HAVING 
-                total_quantity > total_delivered
-
-            ORDER BY 
-                po.created_at DESC
-        `);
-
-        const formatted = rows.map((item: any)=> ({
-            ...item,
-            purchase_order_date: formatISO_PH(rows[0].purchase_order_date),
-            purchase_order_item: JSON.parse(rows[0].purchase_order_item || '[]')
-        })) as PurchaseOrderList[]
-
-        return c.json(formatted)
-
+        const data = await getPendingPurchaseOrder();
+        return c.json(data)
     }
 
     catch (err) {
         console.log(err);
         return c.json({
             success: false,
-            message: "Failed to fetch pending po."
+            message: "Failed to load data."
+        }, 500);
+    }
+
+}
+
+export const getSinglePendingPurchaseOrderController = async (c: Context) => {
+
+
+    const id = (c.req.param('purchase_order_id') || 0) as number;
+
+    if (!id) {
+        return c.json({ error: 'Missing required parameter: id' }, 400)
+    }
+
+    try {
+
+        const data = await getSinglePendingPurchaseOrder(id);
+        return c.json(data)
+    }
+
+    catch (err) {
+        console.log(err);
+        return c.json({
+            success: false,
+            message: "Failed to load data."
         }, 500);
     }
 
@@ -473,7 +260,7 @@ export const getPaginatedPurchaseOrdersController = async (c: Context) => {
 export const createPurchaseOrderController = async (c: any) => {
 
     
-    const conn = await pool.getConnection()
+    const conn = await pool.getConnection();
 
     try {
 
@@ -681,6 +468,50 @@ export const updatePurchaseOrderController = async (c: any) => {
     } finally {
         conn.release();
     }
+
+
+}
+
+
+
+export const updatePurchaseOrderStatusController = async (c: any) => {
+
+    try {
+
+        const { 
+            purchase_order_id,
+            status,
+        } = c.req.valid('json');
+
+        await pool.query(
+            `
+                UPDATE 
+                    purchase_order 
+                SET
+                    status = ?
+                WHERE 
+                    purchase_order_id = ?
+            `,
+            [
+                status,
+                purchase_order_id
+            ]
+        );
+
+        return c.json({
+            success: true,
+            message: `Updated successfully`
+        });
+
+    } catch (err) {
+
+        console.log(err);
+        return c.json({
+            success: false,
+            message: `Failed to update`
+        }, 500);
+
+    } 
 
 
 }

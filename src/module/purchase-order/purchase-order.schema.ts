@@ -22,6 +22,18 @@ export const purchaseOrderSchema = z.object({
 });
 
 
+export const statusEnum = z.enum([
+  "Awaiting cheque",
+  "Cheque released",
+  "Revised",
+  "Completed"
+]);
+
+export const updatePurchaseOrderStatusSchema = z.object({
+  purchase_order_id: z.number().default(0),
+  status: statusEnum
+});
+
 
 
 
