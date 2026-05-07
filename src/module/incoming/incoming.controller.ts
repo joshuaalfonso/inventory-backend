@@ -54,122 +54,133 @@ const ALLOWED_FILTERS = [
 
 export const getPaginatedIncomingController = async (c: Context) => {
     try {
-        const query = c.req.query();
+        const query = c.req.query()
 
-        console.log(query)
+    // console.log(query)
 
-        // pagination
-        const page = parseInt(query.page || '1')
-        const limit = parseInt(query.limit || '10')
-        const offset = (page - 1) * limit
+    // =========================
+    // Pagination
+    // =========================
+    const page = Math.max(parseInt(query.page || '1'), 1)
+    const limit = Math.min(Math.max(parseInt(query.limit || '10'), 1), 100)
+    const offset = (page - 1) * limit
 
-        // filters
-        let where: string[] = ['i.is_del = 0']
-        let params: any[] = []
+    // =========================
+    // Filters
+    // =========================
+    const where: string[] = ['i.is_del = 0']
+    const params: any[] = []
 
-        for (const key of ALLOWED_FILTERS) {
+    for (const key of ALLOWED_FILTERS) {
         const value = query[key]
-            
         if (value) {
             where.push(`po.${key} = ?`)
             params.push(value)
         }
+    }
 
-        }
+    // Search
+    if (query.search) {
+        where.push(`(
+            i.sales_invoice_number LIKE ?
+            OR po.purchase_order_number LIKE ?
+        )`)
 
-        if (query.search) {
-            where.push(`
-                (
-                    i.sales_invoice_number LIKE ?
-                    OR po.purchase_order_number LIKE ?
-                )
-            `)
+        const searchValue = `${query.search}%`
+        params.push(searchValue, searchValue)
+    }
 
-            params.push(
-                `%${query.search}%`, 
-                `%${query.search}%`
-            ) 
-        }
+    const whereClause = where.length
+        ? `WHERE ${where.join(' AND ')}`
+        : ''
 
-        const whereClause = `WHERE ${where.join(' AND ')}`
+    // =========================
+    // Sorting (safe mapping) 
+    // =========================
+    const SORT_MAP: Record<string, string> = {
+        created_at: 'i.created_at',
+        incoming_date: 'i.incoming_date',
+        purchase_order_number: 'po.purchase_order_number',
+        sales_invoice_number: 'i.sales_invoice_number',
+        incoming_id: 'i.incoming_id'
+    }
 
-        // sorting (safe)
-        const sort = ALLOWED_SORT_FIELDS.includes(query.sort)
-        ? query.sort
-        : 'created_at'
+    const sort = SORT_MAP[query.sort] || 'i.incoming_id'
+    // const sort = SORT_MAP[query.sort] || 'i.created_at'
+    const order = query.order === 'asc' ? 'ASC' : 'DESC'
 
-        const order = query.order === 'asc' ? 'ASC' : 'DESC'
-
-        // main query (aggregated)
-
-        const sql = `
+    // =========================
+    // Main Query
+    // =========================
+    const sql = `
+        SELECT 
+            i.incoming_id,
+            i.sales_invoice_number,
+            i.incoming_date,
+            i.purchase_order_id,
+            po.purchase_order_number,
+            i.created_at,
+            IFNULL(ii.total_received, 0) AS total_received
+        FROM incoming i
+        LEFT JOIN purchase_order po
+            ON i.purchase_order_id = po.purchase_order_id
+        LEFT JOIN (
             SELECT 
-                i.incoming_id,
-                i.sales_invoice_number,
-                i.incoming_date,
-                i.purchase_order_id, 
-                po.purchase_order_number,
-                i.created_at,
+                incoming_id,
+                SUM(received_quantity) AS total_received
+            FROM incoming_item
+            WHERE is_del = 0
+            GROUP BY incoming_id
+        ) ii
+            ON i.incoming_id = ii.incoming_id
+        ${whereClause}
+        ORDER BY ${sort} ${order}
+        LIMIT ? OFFSET ?
+    `
 
-                IFNULL(ii.total_received, 0) AS total_received
+    const [rows]: any = await pool.query(sql, [
+        ...params,
+        limit,
+        offset,
+    ])
 
-            FROM incoming i
+    // =========================
+    // Count Query (optimized)
+    // =========================
+    const countSql = `
+        SELECT COUNT(DISTINCT i.incoming_id) AS total
+        FROM incoming i
+        LEFT JOIN purchase_order po
+            ON i.purchase_order_id = po.purchase_order_id
+        ${whereClause}
+    `
 
-            LEFT JOIN purchase_order po
-                ON i.purchase_order_id = po.purchase_order_id
+    const [countResult]: any = await pool.query(countSql, params)
+    const total = countResult[0]?.total || 0
 
-            LEFT JOIN (
-                SELECT 
-                    incoming_id,
-                    SUM(received_quantity) AS total_received
-                FROM 
-                    incoming_item
-                WHERE 
-                    is_del = 0
-                GROUP 
-                    BY incoming_id
-            ) ii ON i.incoming_id = ii.incoming_id
+    // =========================
+    // Format result
+    // =========================
+    const data = rows.map((row: any) => ({
+        incoming_id: row.incoming_id,
+        sales_invoice_number: row.sales_invoice_number,
+        purchase_order_number: row.purchase_order_number,
+        purchase_order_id: row.purchase_order_id,
+        incoming_date: formatISO_PH(row.incoming_date),
+        created_at: row.created_at,
+        total_received: row.total_received,
+    }))
 
-            ${whereClause}
-
-            GROUP BY i.incoming_id
-
-            ORDER BY ${sort} ${order}
-
-            LIMIT ? OFFSET ?
-            `
-
-            const [rows]: any = await pool.query(sql, [...params, limit, offset])
-
-            // COUNT QUERY (no LIMIT)
-            const countSql = `
-                SELECT 
-                    COUNT(DISTINCT i.incoming_id) as total
-                FROM 
-                    incoming i
-                LEFT JOIN 
-                    purchase_order po
-                ON 
-                    i.purchase_order_id = po.purchase_order_id
-                ${whereClause}
-        `
-
-        const [countResult]: any = await pool.query(countSql, params)
-        const total = countResult[0].total
-
-        // format result
-        const data = rows.map((row: any) => ({
-            ...row,
-            incoming_date: formatISO_PH(row.incoming_date),
-        }))
-
-        return c.json({
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-            data,
-        })
+    // =========================
+    // Response
+    // =========================
+    return c.json({
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        data,
+    })
 
     } catch (err) {
         console.error(err)
