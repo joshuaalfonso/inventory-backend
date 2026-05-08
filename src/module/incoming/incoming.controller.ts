@@ -3,6 +3,7 @@ import { pool } from "../../config/connection.js";
 import { generateAssetTag } from "./incoming.service.js";
 import type { Incoming } from "./incoming.model.js";
 import { formatISO_PH } from "../../shared/util/formatDate.js";
+import { consumableMovementLog, type ConsumableMovementInput } from "../../shared/service/consumable-movement.js";
 
 
 
@@ -421,7 +422,7 @@ export const createIncomingController = async (c: any) => {
             for (const item of incoming_item) {
 
                 if (item.received_quantity > item.ordered_quantity) {
-                    throw new Error("Received quantity cannot exceed ordered quantity")
+                    throw new Error("Received quantity cannot exceed open quantity")
                 }
 
                 // Insert incoming_item
@@ -445,32 +446,33 @@ export const createIncomingController = async (c: any) => {
                     ]
                 );
 
-                // await conn.query(
-                //     `
-                //         INSERT INTO 
-                //             consumable_stock (item_id, quantity)
-                //         VALUES 
-                //             (?, ?)
-                //         ON DUPLICATE KEY UPDATE
-                //             quantity = quantity + VALUES(quantity)
-                //     `,
-                //     [item.item_id, item.received_quantity]
-                // );
-
                 //  consumable
                 if (item.item_type_name == "Consumable") {
 
-                    await conn.query(
-                        `
-                            INSERT INTO 
-                                consumable_stock (item_id, quantity)
-                            VALUES 
-                                (?, ?)
-                            ON 
-                                DUPLICATE KEY 
-                            UPDATE
-                                quantity = quantity + VALUES(quantity)
-                    `, [item.item_id, item.received_quantity]);
+                    // await conn.query(
+                    //     `
+                    //         INSERT INTO 
+                    //             consumable_stock (item_id, quantity)
+                    //         VALUES 
+                    //             (?, ?)
+                    //         ON 
+                    //             DUPLICATE KEY 
+                    //         UPDATE
+                    //             quantity = quantity + VALUES(quantity)
+                    // `, [item.item_id, item.received_quantity]);
+
+                    const logData: ConsumableMovementInput = {
+                        item_id: item.item_id,
+                        movement_type: 'Incoming',
+                        quantity: item.received_quantity,
+                        reference_id: incomingItemResult.insertId,
+                        created_by: 1
+                    }
+
+                    await consumableMovementLog(
+                        conn,
+                        logData
+                    );
 
                 }
 
